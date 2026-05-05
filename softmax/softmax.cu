@@ -4,7 +4,7 @@
 #include <algorithm>
 #include <cuda_runtime.h>
 
-constexp int BLOCK_SIZE = 16;
+constexpr int BLOCK_SIZE = 16;
 
 __global__ void max_row_wise_kernel(const float *in, float *out, int active_cols, int stride, int nrows)
 {
