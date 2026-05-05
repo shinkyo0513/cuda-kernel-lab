@@ -2,7 +2,7 @@
 
 #include <cuda_runtime.h>
 #include <chrono>
-#inlcude "check_cuda.h"
+#include "check_cuda.h"
 
 class GPUTimer {
 public:
