@@ -1,3 +1,5 @@
+#pragma once
+
 #include <cuda_runtime.h>
 #include <chrono>
 #inlcude "check_cuda.h"
@@ -23,7 +25,7 @@ public:
         CHECK_CUDA(cudaEventSynchronize(stop_));
     }
 
-    float elapsed_ms() {
+    float elapsed_ms() const {
         float ms = 0.0f;
         CHECK_CUDA(cudaEventElapsedTime(&ms, start_, stop_));
         return ms;
