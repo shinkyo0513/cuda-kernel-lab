@@ -22,6 +22,7 @@ matmul:
 	$(NVCC) $(CFLAGS) matmul/matmul_naive.cu -o $(BUILD_DIR)/matmul/matmul_naive
 	$(NVCC) $(CFLAGS) matmul/matmul_tiled.cu -o $(BUILD_DIR)/matmul/matmul_tiled
 	$(NVCC) $(CFLAGS) matmul/matmul_cublas.cu -o $(BUILD_DIR)/matmul/matmul_cublas $(LDFLAGS)
+	$(NVCC) $(CFLAGS) matmul/matmul_benchmark.cu -o $(BUILD_DIR)/matmul/matmul_benchmark $(LDFLAGS)
 
 softmax:
 	mkdir -p $(BUILD_DIR)/softmax
