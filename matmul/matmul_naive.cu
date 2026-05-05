@@ -1,11 +1,10 @@
-% % writefile naive_matmul.cu
 #include <iostream>
 #include <vector>
 #include <numeric>
 #include <algorithm>
 #include <cuda_runtime.h>
 
-    constexpr int BLOCK_SIZE = 32;
+constexpr int BLOCK_SIZE = 32;
 
 __global__ void matmul_naive_kernel(
     const float *A,
