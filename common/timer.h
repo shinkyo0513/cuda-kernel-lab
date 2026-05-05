@@ -4,14 +4,14 @@
 #include <chrono>
 #include "check_cuda.h"
 
-class GPUTimer {
+class GpuTimer {
 public:
-    GPUTimer() {
+    GpuTimer() {
         CHECK_CUDA(cudaEventCreate(&start_));
         CHECK_CUDA(cudaEventCreate(&stop_));
     }
 
-    ~GPUTimer() {
+    ~GpuTimer() {
         cudaEventDestroy(start_);
         cudaEventDestroy(stop_);
     }
@@ -36,7 +36,7 @@ private:
     cudaEvent_t stop_;
 };
 
-class CPUTimer {
+class CpuTimer {
 public:
     void start() {
         start_ = std::chrono::high_resolution_clock::now();
