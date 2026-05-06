@@ -9,7 +9,9 @@
 #include "check_cuda.h"
 #include "timer.h"
 
-constexpr int TILE_SIZE = 16;
+#ifndef TILE_SIZE
+#define TILE_SIZE 16
+#endif
 
 #define CHECK_CUBLAS(call)                                                 \
     do                                                                     \
