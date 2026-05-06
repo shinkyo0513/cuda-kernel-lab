@@ -1,0 +1,77 @@
+==PROF== Connected to process 5119 (/content/cuda-kernel-lab/build/matmul/matmul_naive)
+==PROF== Profiling "matmul_naive_kernel": 0%....50%....100% - 9 passes
+CUDA calculation duration: 28.6796 ms
+==PROF== Disconnected from process 5119
+[5119] matmul_naive@127.0.0.1
+  matmul_naive_kernel(const float *, const float *, float *, int, int, int) (32, 32, 1)x(32, 32, 1), Context 1, Stream 7, Device 0, CC 7.5
+    Section: GPU Speed Of Light Throughput
+    ----------------------- ----------- ------------
+    Metric Name             Metric Unit Metric Value
+    ----------------------- ----------- ------------
+    DRAM Frequency                  Ghz         4.98
+    SM Frequency                    Mhz       585.00
+    Elapsed Cycles                cycle    8,618,711
+    Memory Throughput                 %        58.70
+    DRAM Throughput                   %         3.44
+    Duration                         ms        14.73
+    L1/TEX Cache Throughput           %        81.26
+    L2 Cache Throughput               %        35.41
+    SM Active Cycles              cycle 8,403,369.57
+    Compute (SM) Throughput           %        58.70
+    ----------------------- ----------- ------------
+
+    OPT   This workload exhibits low compute throughput and memory bandwidth utilization relative to the peak           
+          performance of this device. Achieved compute throughput and/or memory bandwidth below 60.0% of peak           
+          typically indicate latency issues. Look at Scheduler Statistics and Warp State Statistics for potential       
+          reasons.                                                                                                      
+
+    Section: Launch Statistics
+    -------------------------------- --------------- ---------------
+    Metric Name                          Metric Unit    Metric Value
+    -------------------------------- --------------- ---------------
+    Block Size                                                 1,024
+    Function Cache Configuration                     CachePreferNone
+    Grid Size                                                  1,024
+    Registers Per Thread             register/thread              30
+    Shared Memory Configuration Size           Kbyte           32.77
+    Driver Shared Memory Per Block        byte/block               0
+    Dynamic Shared Memory Per Block       byte/block               0
+    Static Shared Memory Per Block        byte/block               0
+    # SMs                                         SM              40
+    Stack Size                                                 1,024
+    Threads                                   thread       1,048,576
+    # TPCs                                                        20
+    Enabled TPC IDs                                              all
+    Uses Green Context                                             0
+    Waves Per SM                                               25.60
+    -------------------------------- --------------- ---------------
+
+    Section: Occupancy
+    ------------------------------- ----------- ------------
+    Metric Name                     Metric Unit Metric Value
+    ------------------------------- ----------- ------------
+    Block Limit SM                        block           16
+    Block Limit Registers                 block            2
+    Block Limit Shared Mem                block           16
+    Block Limit Warps                     block            1
+    Theoretical Active Warps per SM        warp           32
+    Theoretical Occupancy                     %          100
+    Achieved Occupancy                        %       100.28
+    Achieved Active Warps Per SM           warp        32.09
+    ------------------------------- ----------- ------------
+
+    Section: GPU and Memory Workload Distribution
+    -------------------------- ----------- -------------
+    Metric Name                Metric Unit  Metric Value
+    -------------------------- ----------- -------------
+    Average DRAM Active Cycles       cycle  2,527,398.50
+    Total DRAM Elapsed Cycles        cycle   587,409,408
+    Average L1 Active Cycles         cycle  8,403,369.57
+    Total L1 Elapsed Cycles          cycle   343,337,928
+    Average L2 Active Cycles         cycle 12,341,603.25
+    Total L2 Elapsed Cycles          cycle   403,090,496
+    Average SM Active Cycles         cycle  8,403,369.57
+    Total SM Elapsed Cycles          cycle   343,337,928
+    Average SMSP Active Cycles       cycle  8,394,453.99
+    Total SMSP Elapsed Cycles        cycle 1,373,351,712
+    -------------------------- ----------- -------------
