@@ -1,5 +1,7 @@
 #pragma once
 
+#include <cublas_v2.h>
+
 void launch_matmul_cublas(
     cublasHandle_t handle,
     const float *d_A,
