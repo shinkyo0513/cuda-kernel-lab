@@ -1,9 +1,15 @@
 #include <iostream>
 #include <vector>
 #include <algorithm>
+#include <limits>
+#include <cmath>
 #include <cuda_runtime.h>
 
-constexpr int BLOCK_SIZE = 128;
+#include "../common/check_cuda.h"
+
+#ifndef REDUCTION_BLOCK_SIZE
+#define REDUCTION_BLOCK_SIZE 256
+#endif
 
 struct ArgMaxPair
 {
@@ -11,99 +17,162 @@ struct ArgMaxPair
     int index;
 };
 
-__global__ void argmax_reduction_kernel(const ArgMaxPair *arr, ArgMaxPair *partial_max, int n)
+__device__ __host__ inline bool is_better_argmax_pair(
+    const ArgMaxPair &a,
+    const ArgMaxPair &b)
+{
+    // Return true if a is better than b.
+    // Tie-break rule: smaller index wins.
+    if (a.value != b.value)
+    {
+        return a.value > b.value;
+    }
+    return a.index < b.index;
+}
+
+__global__ void argmax_reduction_kernel(
+    const ArgMaxPair *input,
+    ArgMaxPair *partial_max,
+    int n)
 {
     extern __shared__ ArgMaxPair sdata[];
 
-    int tidx = threadIdx.x;
-    int gidx = threadIdx.x + blockDim.x * blockIdx.x;
+    int tid = threadIdx.x;
+    int gid = blockIdx.x * blockDim.x + threadIdx.x;
 
-    // Shared memory copy
-    sdata[tidx].value = gidx < n ? arr[gidx].value : -INFINITY;
-    sdata[tidx].index = gidx < n ? arr[gidx].index : -1;
+    if (gid < n)
+    {
+        sdata[tid] = input[gid];
+    }
+    else
+    {
+        sdata[tid].value = -INFINITY;
+        sdata[tid].index = -1;
+    }
+
     __syncthreads();
 
-    // Tree reduction
     for (int stride = blockDim.x / 2; stride > 0; stride >>= 1)
     {
-        if (tidx < stride)
+        if (tid < stride)
         {
-            auto p1 = sdata[tidx];
-            auto p2 = sdata[tidx + stride];
-            if (p1.value < p2.value || (p1.value == p2.value && p1.index > p2.index))
+            ArgMaxPair left = sdata[tid];
+            ArgMaxPair right = sdata[tid + stride];
+
+            if (is_better_argmax_pair(right, left))
             {
-                sdata[tidx].value = sdata[tidx + stride].value;
-                sdata[tidx].index = sdata[tidx + stride].index;
+                sdata[tid] = right;
             }
         }
+
         __syncthreads();
     }
 
-    if (tidx == 0)
+    if (tid == 0)
     {
         partial_max[blockIdx.x] = sdata[0];
     }
 }
 
-int main()
+ArgMaxPair cpu_argmax(const std::vector<ArgMaxPair> &input)
 {
-    int n = 1024;
-    int bytes = n * sizeof(ArgMaxPair);
-
-    std::vector<ArgMaxPair> h_in(n);
-    for (int i = 0; i < n; ++i)
-    {
-        h_in[i].value = i;
-        if (i == 500)
+    auto it = std::max_element(
+        input.begin(),
+        input.end(),
+        [](const ArgMaxPair &a, const ArgMaxPair &b)
         {
-            h_in[i].value = std::pow(2, 10);
-        }
-        h_in[i].index = i;
-    }
+            // Return true if a is worse than b.
+            if (a.value != b.value)
+            {
+                return a.value < b.value;
+            }
+            return a.index > b.index;
+        });
+
+    return *it;
+}
+
+ArgMaxPair gpu_argmax(const std::vector<ArgMaxPair> &h_input)
+{
+    int n = static_cast<int>(h_input.size());
+    size_t bytes = static_cast<size_t>(n) * sizeof(ArgMaxPair);
 
     ArgMaxPair *d_in = nullptr;
     ArgMaxPair *d_out = nullptr;
-    cudaMalloc(&d_in, bytes);
-    cudaMalloc(&d_out, bytes);
 
-    cudaMemcpy(d_in, h_in.data(), bytes, cudaMemcpyHostToDevice);
+    CHECK_CUDA(cudaMalloc((void **)&d_in, bytes));
+    CHECK_CUDA(cudaMalloc((void **)&d_out, bytes));
+
+    CHECK_CUDA(cudaMemcpy(
+        d_in,
+        h_input.data(),
+        bytes,
+        cudaMemcpyHostToDevice));
 
     int curr_n = n;
+
     while (curr_n > 1)
     {
-        int grid_size = (curr_n + BLOCK_SIZE - 1) / BLOCK_SIZE;
+        int grid_size = (curr_n + REDUCTION_BLOCK_SIZE - 1) / REDUCTION_BLOCK_SIZE;
 
-        argmax_reduction_kernel<<<grid_size, BLOCK_SIZE, BLOCK_SIZE * sizeof(ArgMaxPair)>>>(
-            d_in, d_out, curr_n);
-        cudaDeviceSynchronize();
+        argmax_reduction_kernel<<<
+            grid_size,
+            REDUCTION_BLOCK_SIZE,
+            REDUCTION_BLOCK_SIZE * sizeof(ArgMaxPair)>>>(d_in, d_out, curr_n);
+
+        CHECK_CUDA(cudaGetLastError());
+        CHECK_CUDA(cudaDeviceSynchronize());
 
         std::swap(d_in, d_out);
         curr_n = grid_size;
     }
 
-    ArgMaxPair res_cuda;
-    cudaMemcpy(&res_cuda, d_in, sizeof(ArgMaxPair), cudaMemcpyDeviceToHost);
+    ArgMaxPair result;
+    CHECK_CUDA(cudaMemcpy(
+        &result,
+        d_in,
+        sizeof(ArgMaxPair),
+        cudaMemcpyDeviceToHost));
 
-    std::cout << "CUDA max: " << res_cuda.value << " Index: " << res_cuda.index << std::endl;
+    CHECK_CUDA(cudaFree(d_in));
+    CHECK_CUDA(cudaFree(d_out));
 
-    auto it_res = std::max_element(
-        h_in.begin(),
-        h_in.end(),
-        [](const ArgMaxPair &p1, const ArgMaxPair &p2)
-        {
-            if (p1.value != p2.value)
-            {
-                return p1.value < p2.value;
-            }
-            return p1.index > p2.index;
-        });
-    int res_cpu = it_res->value;
-    int arg_cpu = std::distance(h_in.begin(), it_res);
+    return result;
+}
 
-    std::cout << "CPU max: " << res_cpu << " Index: " << arg_cpu << std::endl;
+int main()
+{
+    const int n = 1024;
 
-    cudaFree(d_in);
-    cudaFree(d_out);
+    std::vector<ArgMaxPair> h_input(n);
 
-    return 0;
+    for (int i = 0; i < n; ++i)
+    {
+        h_input[i].value = static_cast<float>(i);
+        h_input[i].index = i;
+    }
+
+    // Inject a duplicated maximum to test tie-breaking.
+    // Smaller index should win.
+    h_input[500].value = 2048.0f;
+    h_input[700].value = 2048.0f;
+
+    ArgMaxPair cuda_result = gpu_argmax(h_input);
+    ArgMaxPair cpu_result = cpu_argmax(h_input);
+
+    std::cout << "CUDA max: " << cuda_result.value
+              << ", index: " << cuda_result.index << std::endl;
+
+    std::cout << "CPU max:  " << cpu_result.value
+              << ", index: " << cpu_result.index << std::endl;
+
+    bool correct =
+        std::abs(cuda_result.value - cpu_result.value) < 1e-6f &&
+        cuda_result.index == cpu_result.index;
+
+    std::cout << "Correctness: "
+              << (correct ? "PASS" : "FAIL")
+              << std::endl;
+
+    return correct ? 0 : 1;
 }
