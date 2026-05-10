@@ -4,7 +4,8 @@
 	softmax_benchmark \
 	transpose_benchmark \
 	matmul_benchmark \
-	attention_benchmark
+	attention_benchmark \
+	attention_profile
 
 NVCC=nvcc
 
@@ -91,6 +92,17 @@ attention_benchmark:
 		attention/attention_cuda.cu \
 		attention/attention_benchmark.cu \
 		-o $(BUILD_DIR)/attention/attention_benchmark
+
+attention_profile:
+	mkdir -p $(BUILD_DIR)/attention
+	$(NVCC) $(CFLAGS) $(DEFINES) \
+		kernels/matmul_tiled.cu \
+		kernels/softmax.cu \
+		kernels/transpose.cu \
+		attention/attention_cpu.cpp \
+		attention/attention_cuda.cu \
+		attention/attention_profile.cu \
+		-o $(BUILD_DIR)/attention/attention_profile
 
 # ------------------------------------------------------------
 # Clean
