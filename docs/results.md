@@ -73,15 +73,15 @@ This version uses `attention_cpu_with_workspace` and `launch_attention_cuda_with
 
 |    S |  D |   CPU ms | CPU GFLOP/s | CUDA ms | CUDA GFLOP/s | CUDA speedup | Max error | Correctness |
 | ---: | -: | -------: | ----------: | ------: | -----------: | -----------: | --------: | ----------- |
-|  128 | 64 |   2.5055 |        1.72 |  0.0816 |        52.70 |       30.70x |      0.00 | PASS        |
-|  256 | 64 |  10.4933 |        1.64 |  0.1132 |       151.80 |       92.70x |      0.00 | PASS        |
-|  512 | 64 |  42.1718 |        1.63 |  0.4312 |       159.36 |       97.80x |      0.00 | PASS        |
-| 1024 | 64 |      N/A |         N/A |  1.3928 |       197.30 |          N/A |       N/A | N/A         |
-| 1000 | 80 | 227.9165 |        1.43 |  2.2648 |       143.98 |      100.63x |      0.00 | PASS        |
+|  128 | 64 |   2.1224 |        2.03 |  0.0652 |        65.93 |       32.55x |      0.00 | PASS        |
+|  256 | 64 |   9.0239 |        1.90 |  0.0881 |       195.14 |      102.43x |      0.00 | PASS        |
+|  512 | 64 |  38.3580 |        1.79 |  0.2362 |       290.92 |      162.40x |      0.00 | PASS        |
+| 1024 | 64 |      N/A |         N/A |  0.9478 |       289.93 |          N/A |       N/A | N/A         |
+| 1000 | 80 | 174.3108 |        1.87 |  1.8451 |       176.73 |       94.47x |      0.00 | PASS        |
 
 ## Attention Workspace Observations
 
 - Reusing workspace removes repeated `cudaMalloc`/`cudaFree` overhead from the timed CUDA path.
-- CUDA throughput improves from roughly 40 to 147 GFLOP/s in the original benchmark to roughly 53 to 197 GFLOP/s with reusable workspace.
-- The largest reported CPU/CUDA speedup increases to 100.63x for S=1000, D=80.
+- CUDA throughput improves from roughly 40 to 147 GFLOP/s in the original benchmark to roughly 66 to 291 GFLOP/s with reusable workspace.
+- The largest reported CPU/CUDA speedup increases to 162.40x for S=512, D=64.
 - Correctness remains unchanged for CPU-checked cases, with max error reported as 0.00.

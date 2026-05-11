@@ -180,7 +180,7 @@ void run_case(
     CHECK_CUDA(cudaMemcpy(d_V, h_V.data(), bytes, cudaMemcpyHostToDevice));
 
     int gpu_repeats = 20;
-    int cpu_repeats = 1;
+    int cpu_repeats = 20;
 
     double cpu_ms = -1.0;
     if (run_cpu)
