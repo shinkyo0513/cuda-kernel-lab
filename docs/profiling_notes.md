@@ -82,3 +82,16 @@ Compared with the naive kernel, the tiled matmul kernel reduces runtime from 14.
 | cuBLAS SGEMM | 0.5204ms | 4126.79 | Highly optimized vendor implementation |
 
 cuBLAS is faster because it uses highly optimized GEMM kernels, including architecture-specific tiling, register blocking, better memory pipelining, instruction scheduling, and Tensor Core paths where applicable.
+
+## Attention Profiling Summary
+
+| Kernel Stage | Kernel Name | Duration | Compute Throughput | Memory Throughput | Occupancy | Notes |
+|---|---|---:|---:|---:|---:|---|
+| K transpose | transpose_shared_kernel | 6.78us | 16.22% | 16.22% | 100.70% | Creates K_T |
+| QK^T matmul | matmul_tiled_kernel | 356.48us | 71.45% | 71.45% | 99.10% | Computes scores |
+| Scale | scale_kernel | 38.11us | 23.85% | 72.62% | 83.31% | Elementwise scaling |
+| Softmax max | max_row_wise_kernel | 7.14us | 26.23% | 26.23% | 96.99% | Row-wise max reduction |
+| Softmax exp | subtract_max_and_exp_kernel | 52.61 | 27.45% | 57.55% | 91.61 | exp(x - max) |
+| Softmax sum | sum_row_wise_kernel | 108.61us | 54.91% | 54.91% | 98.57% | Row-wise sum reduction |
+| Softmax normalize | normalize_kernel | 51.97us | 28.01% | 55.41% | 90.05% | Normalize probabilities |
+| PV matmul | matmul_tiled_kernel | 414.43us | 59.70% | 59.70% | 100.32% | Computes output |
