@@ -41,6 +41,8 @@ double benchmark_cpu(
     const std::vector<float> &h_Q,
     const std::vector<float> &h_K,
     const std::vector<float> &h_V,
+    std::vector<float> &h_scores,
+    std::vector<float> &h_probs,
     std::vector<float> &h_O,
     int seq_len,
     int dim,
@@ -51,7 +53,15 @@ double benchmark_cpu(
     timer.start();
     for (int i = 0; i < repeats; ++i)
     {
-        attention_cpu(h_Q, h_K, h_V, h_O, seq_len, dim);
+        attention_cpu_with_workspace(
+            h_Q,
+            h_K,
+            h_V,
+            h_scores,
+            h_probs,
+            h_O,
+            seq_len,
+            dim);
     }
     timer.stop();
 
@@ -63,13 +73,25 @@ float benchmark_cuda(
     const float *d_K,
     const float *d_V,
     float *d_O,
+    float *d_KT,
+    float *d_scores,
+    float *d_probs,
     int seq_len,
     int dim,
     int repeats)
 {
     for (int i = 0; i < 5; ++i)
     {
-        launch_attention_cuda(d_Q, d_K, d_V, d_O, seq_len, dim);
+        launch_attention_cuda_with_workspace(
+            d_Q,
+            d_K,
+            d_V,
+            d_O,
+            d_KT,
+            d_scores,
+            d_probs,
+            seq_len,
+            dim);
     }
     CHECK_CUDA(cudaDeviceSynchronize());
 
@@ -78,7 +100,16 @@ float benchmark_cuda(
 
     for (int i = 0; i < repeats; ++i)
     {
-        launch_attention_cuda(d_Q, d_K, d_V, d_O, seq_len, dim);
+        launch_attention_cuda_with_workspace(
+            d_Q,
+            d_K,
+            d_V,
+            d_O,
+            d_KT,
+            d_scores,
+            d_probs,
+            seq_len,
+            dim);
     }
 
     timer.stop();
@@ -104,6 +135,8 @@ void run_case(
     std::vector<float> h_V(num_elements);
     std::vector<float> h_O_cpu(num_elements, 0.0f);
     std::vector<float> h_O_cuda(num_elements, 0.0f);
+    std::vector<float> h_scores(static_cast<size_t>(seq_len) * seq_len);
+    std::vector<float> h_probs(static_cast<size_t>(seq_len) * seq_len);
 
     std::mt19937 rng(123);
     std::uniform_real_distribution<float> dist(-1.0f, 1.0f);
@@ -127,11 +160,20 @@ void run_case(
     float *d_K = nullptr;
     float *d_V = nullptr;
     float *d_O = nullptr;
+    float *d_KT = nullptr;
+    float *d_scores = nullptr;
+    float *d_probs = nullptr;
+
+    size_t bytes_KT = static_cast<size_t>(dim) * seq_len * sizeof(float);
+    size_t bytes_scores = static_cast<size_t>(seq_len) * seq_len * sizeof(float);
 
     CHECK_CUDA(cudaMalloc((void **)&d_Q, bytes));
     CHECK_CUDA(cudaMalloc((void **)&d_K, bytes));
     CHECK_CUDA(cudaMalloc((void **)&d_V, bytes));
     CHECK_CUDA(cudaMalloc((void **)&d_O, bytes));
+    CHECK_CUDA(cudaMalloc((void **)&d_KT, bytes_KT));
+    CHECK_CUDA(cudaMalloc((void **)&d_scores, bytes_scores));
+    CHECK_CUDA(cudaMalloc((void **)&d_probs, bytes_scores));
 
     CHECK_CUDA(cudaMemcpy(d_Q, h_Q.data(), bytes, cudaMemcpyHostToDevice));
     CHECK_CUDA(cudaMemcpy(d_K, h_K.data(), bytes, cudaMemcpyHostToDevice));
@@ -144,7 +186,7 @@ void run_case(
     if (run_cpu)
     {
         cpu_ms = benchmark_cpu(
-            h_Q, h_K, h_V, h_O_cpu,
+            h_Q, h_K, h_V, h_scores, h_probs, h_O_cpu,
             seq_len, dim, cpu_repeats
         );
 
@@ -157,7 +199,7 @@ void run_case(
     }
 
     float tiled_ms = benchmark_cuda(
-        d_Q, d_K, d_V, d_O,
+        d_Q, d_K, d_V, d_O, d_KT, d_scores, d_probs,
         seq_len, dim, gpu_repeats
     );
     CHECK_CUDA(cudaMemcpy(h_O_cuda.data(), d_O, bytes, cudaMemcpyDeviceToHost));
@@ -183,6 +225,9 @@ void run_case(
     CHECK_CUDA(cudaFree(d_K));
     CHECK_CUDA(cudaFree(d_V));
     CHECK_CUDA(cudaFree(d_O));
+    CHECK_CUDA(cudaFree(d_KT));
+    CHECK_CUDA(cudaFree(d_scores));
+    CHECK_CUDA(cudaFree(d_probs));
 }
 
 int main()

@@ -66,6 +66,44 @@ void launch_attention_cuda(
     CHECK_CUDA(cudaMalloc((void **)&d_scores, bytes_scores));
     CHECK_CUDA(cudaMalloc((void **)&d_probs, bytes_scores));
 
+    launch_attention_cuda_with_workspace(
+        d_Q,
+        d_K,
+        d_V,
+        d_O,
+        d_KT,
+        d_scores,
+        d_probs,
+        seq_len,
+        dim);
+
+    CHECK_CUDA(cudaFree(d_KT));
+    CHECK_CUDA(cudaFree(d_scores));
+    CHECK_CUDA(cudaFree(d_probs));
+}
+
+void launch_attention_cuda_with_workspace(
+    const float *d_Q,
+    const float *d_K,
+    const float *d_V,
+    float *d_O,
+    float *d_KT,
+    float *d_scores,
+    float *d_probs,
+    int seq_len,
+    int dim)
+{
+    // Q:      [S, D]
+    // K:      [S, D]
+    // V:      [S, D]
+    // K_T:    [D, S]
+    // scores: [S, S]
+    // probs:  [S, S]
+    // O:      [S, D]
+
+    const int S = seq_len;
+    const int D = dim;
+
     // 1. K_T = transpose(K)
     // K:   [S, D]
     // K_T: [D, S]
@@ -89,8 +127,4 @@ void launch_attention_cuda(
     // V:     [S, D]
     // O:     [S, D]
     launch_matmul_tiled(d_probs, d_V, d_O, S, D, S);
-
-    CHECK_CUDA(cudaFree(d_KT));
-    CHECK_CUDA(cudaFree(d_scores));
-    CHECK_CUDA(cudaFree(d_probs));
 }
