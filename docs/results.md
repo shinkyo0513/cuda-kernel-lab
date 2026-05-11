@@ -85,3 +85,20 @@ This version uses `attention_cpu_with_workspace` and `launch_attention_cuda_with
 - CUDA throughput improves from roughly 40 to 147 GFLOP/s in the original benchmark to roughly 66 to 291 GFLOP/s with reusable workspace.
 - The largest reported CPU/CUDA speedup increases to 162.40x for S=512, D=64.
 - Correctness remains unchanged for CPU-checked cases, with max error reported as 0.00.
+
+## Softmax Benchmark
+
+This compares the original multi-kernel softmax implementation with the fused one-block-per-row softmax implementation.
+
+| Rows | Cols | Multi-kernel softmax ms | Multi-kernel GFLOP/s | Fused softmax ms | Fused GFLOP/s | Fused speedup | Multi-kernel max error | Fused max error | Correctness |
+| ---: | ---: | ----------------------: | -------------------: | ---------------: | ------------: | ------------: | ---------------------: | --------------: | ----------- |
+| 1024 |  128 |                  0.0786 |                 8.34 |           0.0199 |         32.99 |         3.96x |              1.043e-07 |       7.451e-08 | PASS        |
+| 1024 |  256 |                  0.2056 |                 6.38 |           0.0380 |         34.47 |         5.41x |              6.706e-08 |       5.960e-08 | PASS        |
+| 1024 |  512 |                  0.4296 |                 6.10 |           0.0844 |         31.07 |         5.09x |              4.470e-08 |       4.470e-08 | PASS        |
+| 1024 | 1000 |                  0.7008 |                 7.31 |           0.1710 |         29.95 |         4.10x |              3.353e-08 |       3.353e-08 | PASS        |
+
+## Softmax Observations
+
+- The fused implementation is faster in all tested cases, with speedups from 3.96x to 5.41x.
+- The fused version reaches up to 34.47 GFLOP/s, while the multi-kernel version stays around 6 to 8 GFLOP/s.
+- All tested fused cases now pass correctness, with max error near the multi-kernel implementation.
