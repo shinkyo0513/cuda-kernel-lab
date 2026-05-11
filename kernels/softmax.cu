@@ -2,12 +2,17 @@
 
 #include <cmath>
 #include <algorithm>
+#include <cassert>
 #include <cuda_runtime.h>
 
 #include "../common/check_cuda.h"
 
 #ifndef SOFTMAX_BLOCK_SIZE
 #define SOFTMAX_BLOCK_SIZE 32
+#endif
+
+#ifndef SOFTMAX_FUSED_BLOCK_SIZE
+#define SOFTMAX_FUSED_BLOCK_SIZE 32
 #endif
 
 __global__ void max_row_wise_kernel(
@@ -237,4 +242,84 @@ void launch_softmax(
 
     CHECK_CUDA(cudaFree(d_tmp_a));
     CHECK_CUDA(cudaFree(d_tmp_b));
+}
+
+__global__ void softmax_kernel(
+    const float *in,
+    float *out,
+    int nrows,
+    int ncols
+) {
+    int row = blockIdx.x;
+    int col = threadIdx.x;
+
+    extern __shared__ float sdata[];
+
+    int gidx = row * ncols + col;
+
+    sdata[col] = (row < nrows && col < ncols) ? in[gidx] : -INFINITY;
+    __syncthreads();
+
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1)
+    {
+        if (col < stride)
+        {
+            float a = sdata[col];
+            float b = sdata[col + stride];
+            sdata[col] = (a < b) ? b : a;
+        }
+        __syncthreads();
+    }
+
+    float row_max = sdata[0];
+
+    sdata[col] = (row < nrows && col < ncols) ? expf(in[gidx] - row_max) : 0.0f;
+    __syncthreads();
+
+    for (int stride = blockDim.x / 2; stride > 0; stride >>= 1)
+    {
+        if (col < stride)
+        {
+            sdata[col] += sdata[col + stride];
+        }
+        __syncthreads();
+    }
+
+    float row_exp_sum = sdata[0];
+
+    if (row < nrows && col < ncols)
+    {
+        out[gidx] = expf(in[gidx] - row_max) / row_exp_sum;
+    }
+}
+
+static int next_power_of_two(int n)
+{
+    int value = 1;
+    while (value < n)
+    {
+        value <<= 1;
+    }
+    return value;
+}
+
+void launch_softmax_fused(
+    const float *d_in,
+    float *d_out,
+    int nrows,
+    int ncols
+) {
+    assert(nrows > 0);
+    assert(ncols > 0);
+    assert(ncols <= 1024);
+
+    int block = next_power_of_two(ncols);
+    int grid = nrows;
+    size_t shared_bytes = block * sizeof(float);
+
+    softmax_kernel<<<grid, block, shared_bytes>>>(
+        d_in, d_out, nrows, ncols
+    );
+
+    CHECK_CUDA(cudaGetLastError());
 }
