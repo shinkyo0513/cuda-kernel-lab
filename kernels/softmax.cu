@@ -271,7 +271,13 @@ __global__ void softmax_kernel(
         __syncthreads();
     }
 
-    float row_max = sdata[0];
+    // Thread-safe, avoid expf overwrite sdata[0]
+    __shared__ float row_max;
+    if (col == 0)
+    {
+        row_max = sdata[0];
+    }
+    __syncthreads();
 
     sdata[col] = (row < nrows && col < ncols) ? expf(in[gidx] - row_max) : 0.0f;
     __syncthreads();
@@ -285,7 +291,13 @@ __global__ void softmax_kernel(
         __syncthreads();
     }
 
-    float row_exp_sum = sdata[0];
+    // Thread-safe, avoid sdata[0] being overwrittern
+    __shared__ float row_exp_sum;
+    if (col == 0)
+    {
+        row_exp_sum = sdata[0];
+    }
+    __syncthreads();
 
     if (row < nrows && col < ncols)
     {
