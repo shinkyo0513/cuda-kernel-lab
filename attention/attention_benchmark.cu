@@ -5,8 +5,10 @@
 #include <iomanip>
 #include <algorithm>
 #include <cuda_runtime.h>
+#include <cublas_v2.h>
 
 #include "../common/check_cuda.h"
+#include "../common/check_cublas.h"
 #include "../common/timer.h"
 
 #include "attention_cpu.h"
@@ -118,7 +120,61 @@ float benchmark_cuda(
     return timer.elapsed_ms() / repeats;
 }
 
+float benchmark_cublas_fused(
+    cublasHandle_t handle,
+    const float *d_Q,
+    const float *d_K,
+    const float *d_V,
+    float *d_O,
+    float *d_KT,
+    float *d_scores,
+    float *d_probs,
+    int seq_len,
+    int dim,
+    int repeats)
+{
+    for (int i = 0; i < 5; ++i)
+    {
+        launch_attention_cublas_fused_softmax_with_workspace(
+            handle,
+            d_Q,
+            d_K,
+            d_V,
+            d_O,
+            d_KT,
+            d_scores,
+            d_probs,
+            seq_len,
+            dim);
+    }
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    GpuTimer timer;
+    timer.start();
+
+    for (int i = 0; i < repeats; ++i)
+    {
+        launch_attention_cublas_fused_softmax_with_workspace(
+            handle,
+            d_Q,
+            d_K,
+            d_V,
+            d_O,
+            d_KT,
+            d_scores,
+            d_probs,
+            seq_len,
+            dim);
+    }
+
+    timer.stop();
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return timer.elapsed_ms() / repeats;
+}
+
 void run_case(
+    cublasHandle_t handle,
     int seq_len,
     int dim,
     bool run_cpu
@@ -135,6 +191,7 @@ void run_case(
     std::vector<float> h_V(num_elements);
     std::vector<float> h_O_cpu(num_elements, 0.0f);
     std::vector<float> h_O_cuda(num_elements, 0.0f);
+    std::vector<float> h_O_cublas_fused(num_elements, 0.0f);
     std::vector<float> h_scores(static_cast<size_t>(seq_len) * seq_len);
     std::vector<float> h_probs(static_cast<size_t>(seq_len) * seq_len);
 
@@ -211,14 +268,41 @@ void run_case(
               << attention_gflops(seq_len, dim, tiled_ms)
               << " GFLOP/s" << std::endl;
 
+    float cublas_fused_ms = benchmark_cublas_fused(
+        handle,
+        d_Q, d_K, d_V, d_O, d_KT, d_scores, d_probs,
+        seq_len, dim, gpu_repeats
+    );
+    CHECK_CUDA(cudaMemcpy(h_O_cublas_fused.data(), d_O, bytes, cudaMemcpyDeviceToHost));
+
+    std::cout << "cuBLAS+fused softmax: "
+              << std::fixed << std::setprecision(4)
+              << cublas_fused_ms << " ms, "
+              << std::setprecision(2)
+              << attention_gflops(seq_len, dim, cublas_fused_ms)
+              << " GFLOP/s" << std::endl;
+
     if (run_cpu)
     {
-        float err = max_abs_error(h_O_cpu, h_O_cuda);
+        float tiled_err = max_abs_error(h_O_cpu, h_O_cuda);
+        float cublas_fused_err = max_abs_error(h_O_cpu, h_O_cublas_fused);
+
         std::cout << "Max error CUDA vs CPU: "
-                  << err << std::endl;
-        std::cout << "Correctness:           "
-                  << (err < 1e-3f ? "PASS" : "FAIL")
+                  << tiled_err << std::endl;
+        std::cout << "Max error cuBLAS+fused vs CPU: "
+                  << cublas_fused_err << std::endl;
+        std::cout << "Correctness CUDA:      "
+                  << (tiled_err < 1e-3f ? "PASS" : "FAIL")
                   << std::endl;
+        std::cout << "Correctness cuBLAS+fused: "
+                  << (cublas_fused_err < 1e-3f ? "PASS" : "FAIL")
+                  << std::endl;
+    }
+    else
+    {
+        float cublas_fused_err = max_abs_error(h_O_cuda, h_O_cublas_fused);
+        std::cout << "Max error cuBLAS+fused vs CUDA: "
+                  << cublas_fused_err << std::endl;
     }
 
     CHECK_CUDA(cudaFree(d_Q));
@@ -234,11 +318,16 @@ int main()
 {
     CHECK_CUDA(cudaSetDevice(0));
 
-    run_case(128, 64, true);
-    run_case(256, 64, true);
-    run_case(512, 64, true);
-    run_case(1024, 64, false);
-    run_case(1000, 80, true);
+    cublasHandle_t handle;
+    CHECK_CUBLAS(cublasCreate(&handle));
+
+    run_case(handle, 128, 64, true);
+    run_case(handle, 256, 64, true);
+    run_case(handle, 512, 64, true);
+    run_case(handle, 1024, 64, false);
+    run_case(handle, 1000, 80, true);
+
+    CHECK_CUBLAS(cublasDestroy(handle));
 
     return 0;
 }
