@@ -1,0 +1,31 @@
+name: CUDA Build
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container:
+      image: nvidia/cuda:12.4.1-devel-ubuntu22.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: |
+          apt-get update
+          apt-get install -y make
+
+      - name: Show CUDA compiler
+        run: nvcc --version
+
+      - name: Dry-run Makefile
+        run: make -n all
+
+      - name: Build all targets
+        run: make all
