@@ -70,7 +70,36 @@ double benchmark_cpu(
     return timer.elapsed_ms() / repeats;
 }
 
-float benchmark_cuda(
+float benchmark_cuda_allocating(
+    const float *d_Q,
+    const float *d_K,
+    const float *d_V,
+    float *d_O,
+    int seq_len,
+    int dim,
+    int repeats)
+{
+    for (int i = 0; i < 5; ++i)
+    {
+        launch_attention_cuda(d_Q, d_K, d_V, d_O, seq_len, dim);
+    }
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    GpuTimer timer;
+    timer.start();
+
+    for (int i = 0; i < repeats; ++i)
+    {
+        launch_attention_cuda(d_Q, d_K, d_V, d_O, seq_len, dim);
+    }
+
+    timer.stop();
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return timer.elapsed_ms() / repeats;
+}
+
+float benchmark_cuda_workspace(
     const float *d_Q,
     const float *d_K,
     const float *d_V,
@@ -103,6 +132,56 @@ float benchmark_cuda(
     for (int i = 0; i < repeats; ++i)
     {
         launch_attention_cuda_with_workspace(
+            d_Q,
+            d_K,
+            d_V,
+            d_O,
+            d_KT,
+            d_scores,
+            d_probs,
+            seq_len,
+            dim);
+    }
+
+    timer.stop();
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    return timer.elapsed_ms() / repeats;
+}
+
+float benchmark_cuda_fused(
+    const float *d_Q,
+    const float *d_K,
+    const float *d_V,
+    float *d_O,
+    float *d_KT,
+    float *d_scores,
+    float *d_probs,
+    int seq_len,
+    int dim,
+    int repeats)
+{
+    for (int i = 0; i < 5; ++i)
+    {
+        launch_attention_cuda_fused_softmax_with_workspace(
+            d_Q,
+            d_K,
+            d_V,
+            d_O,
+            d_KT,
+            d_scores,
+            d_probs,
+            seq_len,
+            dim);
+    }
+    CHECK_CUDA(cudaDeviceSynchronize());
+
+    GpuTimer timer;
+    timer.start();
+
+    for (int i = 0; i < repeats; ++i)
+    {
+        launch_attention_cuda_fused_softmax_with_workspace(
             d_Q,
             d_K,
             d_V,
@@ -190,7 +269,9 @@ void run_case(
     std::vector<float> h_K(num_elements);
     std::vector<float> h_V(num_elements);
     std::vector<float> h_O_cpu(num_elements, 0.0f);
-    std::vector<float> h_O_cuda(num_elements, 0.0f);
+    std::vector<float> h_O_v0(num_elements, 0.0f);
+    std::vector<float> h_O_v1(num_elements, 0.0f);
+    std::vector<float> h_O_v2(num_elements, 0.0f);
     std::vector<float> h_O_cublas_fused(num_elements, 0.0f);
     std::vector<float> h_scores(static_cast<size_t>(seq_len) * seq_len);
     std::vector<float> h_probs(static_cast<size_t>(seq_len) * seq_len);
@@ -255,54 +336,99 @@ void run_case(
                   << " GFLOP/s" << std::endl;
     }
 
-    float tiled_ms = benchmark_cuda(
+    float v0_ms = benchmark_cuda_allocating(
+        d_Q, d_K, d_V, d_O,
+        seq_len, dim, gpu_repeats
+    );
+    CHECK_CUDA(cudaMemcpy(h_O_v0.data(), d_O, bytes, cudaMemcpyDeviceToHost));
+
+    std::cout << "v0 baseline: "
+              << std::fixed << std::setprecision(4)
+              << v0_ms << " ms, "
+              << std::setprecision(2)
+              << attention_gflops(seq_len, dim, v0_ms)
+              << " GFLOP/s" << std::endl;
+
+    float v1_ms = benchmark_cuda_workspace(
         d_Q, d_K, d_V, d_O, d_KT, d_scores, d_probs,
         seq_len, dim, gpu_repeats
     );
-    CHECK_CUDA(cudaMemcpy(h_O_cuda.data(), d_O, bytes, cudaMemcpyDeviceToHost));
+    CHECK_CUDA(cudaMemcpy(h_O_v1.data(), d_O, bytes, cudaMemcpyDeviceToHost));
 
-    std::cout << "CUDA:    "
+    std::cout << "v1 workspace: "
               << std::fixed << std::setprecision(4)
-              << tiled_ms << " ms, "
+              << v1_ms << " ms, "
               << std::setprecision(2)
-              << attention_gflops(seq_len, dim, tiled_ms)
+              << attention_gflops(seq_len, dim, v1_ms)
               << " GFLOP/s" << std::endl;
 
-    float cublas_fused_ms = benchmark_cublas_fused(
+    float v2_ms = benchmark_cuda_fused(
+        d_Q, d_K, d_V, d_O, d_KT, d_scores, d_probs,
+        seq_len, dim, gpu_repeats
+    );
+    CHECK_CUDA(cudaMemcpy(h_O_v2.data(), d_O, bytes, cudaMemcpyDeviceToHost));
+
+    std::cout << "v2 fused softmax: "
+              << std::fixed << std::setprecision(4)
+              << v2_ms << " ms, "
+              << std::setprecision(2)
+              << attention_gflops(seq_len, dim, v2_ms)
+              << " GFLOP/s" << std::endl;
+
+    float v3_ms = benchmark_cublas_fused(
         handle,
         d_Q, d_K, d_V, d_O, d_KT, d_scores, d_probs,
         seq_len, dim, gpu_repeats
     );
     CHECK_CUDA(cudaMemcpy(h_O_cublas_fused.data(), d_O, bytes, cudaMemcpyDeviceToHost));
 
-    std::cout << "cuBLAS+fused softmax: "
+    std::cout << "v3 cuBLAS+fused softmax: "
               << std::fixed << std::setprecision(4)
-              << cublas_fused_ms << " ms, "
+              << v3_ms << " ms, "
               << std::setprecision(2)
-              << attention_gflops(seq_len, dim, cublas_fused_ms)
+              << attention_gflops(seq_len, dim, v3_ms)
               << " GFLOP/s" << std::endl;
 
     if (run_cpu)
     {
-        float tiled_err = max_abs_error(h_O_cpu, h_O_cuda);
-        float cublas_fused_err = max_abs_error(h_O_cpu, h_O_cublas_fused);
+        float v0_err = max_abs_error(h_O_cpu, h_O_v0);
+        float v1_err = max_abs_error(h_O_cpu, h_O_v1);
+        float v2_err = max_abs_error(h_O_cpu, h_O_v2);
+        float v3_err = max_abs_error(h_O_cpu, h_O_cublas_fused);
 
-        std::cout << "Max error CUDA vs CPU: "
-                  << tiled_err << std::endl;
-        std::cout << "Max error cuBLAS+fused vs CPU: "
-                  << cublas_fused_err << std::endl;
-        std::cout << "Correctness CUDA:      "
-                  << (tiled_err < 1e-3f ? "PASS" : "FAIL")
+        std::cout << "Max error v0 vs CPU: "
+                  << v0_err << std::endl;
+        std::cout << "Max error v1 vs CPU: "
+                  << v1_err << std::endl;
+        std::cout << "Max error v2 vs CPU: "
+                  << v2_err << std::endl;
+        std::cout << "Max error v3 vs CPU: "
+                  << v3_err << std::endl;
+        std::cout << "Correctness v0: "
+                  << (v0_err < 1e-3f ? "PASS" : "FAIL")
                   << std::endl;
-        std::cout << "Correctness cuBLAS+fused: "
-                  << (cublas_fused_err < 1e-3f ? "PASS" : "FAIL")
+        std::cout << "Correctness v1: "
+                  << (v1_err < 1e-3f ? "PASS" : "FAIL")
+                  << std::endl;
+        std::cout << "Correctness v2: "
+                  << (v2_err < 1e-3f ? "PASS" : "FAIL")
+                  << std::endl;
+        std::cout << "Correctness v3: "
+                  << (v3_err < 1e-3f ? "PASS" : "FAIL")
                   << std::endl;
     }
     else
     {
-        float cublas_fused_err = max_abs_error(h_O_cuda, h_O_cublas_fused);
-        std::cout << "Max error cuBLAS+fused vs CUDA: "
-                  << cublas_fused_err << std::endl;
+        float v0_err = max_abs_error(h_O_v1, h_O_v0);
+        float v2_err = max_abs_error(h_O_v1, h_O_v2);
+        float v3_err = max_abs_error(h_O_v1, h_O_cublas_fused);
+
+        std::cout << "Max error v0 vs v1: "
+                  << v0_err << std::endl;
+        std::cout << "Max error v2 vs v1: "
+                  << v2_err << std::endl;
+        std::cout << "Max error v3 vs v1: "
+                  << v3_err << std::endl;
     }
 
     CHECK_CUDA(cudaFree(d_Q));
