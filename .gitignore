@@ -1,1 +1,14 @@
-build
+# Build outputs
+build/
+
+# macOS metadata
+.DS_Store
+**/.DS_Store
+
+# Nsight / profiler temporary outputs
+*.qdrep
+*.nsys-rep
+*.ncu-rep
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
