@@ -450,7 +450,7 @@ int main()
     run_case(handle, 128, 64, true);
     run_case(handle, 256, 64, true);
     run_case(handle, 512, 64, true);
-    run_case(handle, 1024, 64, false);
+    run_case(handle, 1024, 64, true);
     run_case(handle, 1000, 80, true);
 
     CHECK_CUBLAS(cublasDestroy(handle));
